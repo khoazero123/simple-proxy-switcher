@@ -1,12 +1,12 @@
 {
   "defTitle": {
-    "message": "Simple Proxy Switcher"
+    "message": "Proxy By Domain"
   },
   "extName": {
-    "message": "Simple Proxy Switcher"
+    "message": "Proxy By Domain"
   },
   "extDescr": {
-    "message": "Simple Proxy Switcher"
+    "message": "Proxy By Domain"
   },
   "TEXT_WITH": {
     "message": "С"
@@ -52,5 +52,41 @@
   },
   "TEXT_EXCLUDE_URLS": {
     "message": "Исключить URL-адреса"
+  },
+  "TEXT_DOMAIN_RULES": {
+    "message": "Правила доменов"
+  },
+  "TEXT_DOMAIN_RULES_INFO": {
+    "message": "Автоматически направлять выбранные домены через указанный прокси. Остальной трафик идет напрямую, если не включен глобальный прокси."
+  },
+  "TEXT_DOMAIN_RULES_EMPTY": {
+    "message": "Правил пока нет"
+  },
+  "TEXT_DOMAIN_PATTERN": {
+    "message": "Домен / шаблон"
+  },
+  "TEXT_DOMAIN_PROXY": {
+    "message": "Прокси"
+  },
+  "TEXT_DOMAIN_PROXY_SELECT": {
+    "message": "Выберите прокси"
+  },
+  "TEXT_DOMAIN_NOTE": {
+    "message": "Заметка"
+  },
+  "TEXT_DOMAIN_ENABLED": {
+    "message": "Вкл"
+  },
+  "TEXT_BTN_ADD": {
+    "message": "Добавить"
+  },
+  "TEXT_BTN_DELETE": {
+    "message": "Удалить"
+  },
+  "TEXT_DOMAIN_PATTERN_INVALID": {
+    "message": "Введите корректный домен или шаблон, например example.com или *.example.com"
+  },
+  "TEXT_DOMAIN_PROXY_REQUIRED": {
+    "message": "Выберите прокси из импортированного списка"
   }
 }

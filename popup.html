@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Simple Proxy Switcher</title>
+    <title>Proxy By Domain</title>
 
     <link href="assets/lib/bootstrap/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/popup.css" rel="stylesheet">
@@ -18,6 +18,9 @@
             </button>
             <button class="nav-link" id="nav-import-tab" data-bs-toggle="tab" data-bs-target="#nav-import" type="button" role="tab" aria-controls="nav-import" aria-selected="false">
                 __MSG_TEXT_IMPORT_PROXY__
+            </button>
+            <button class="nav-link" id="nav-rules-tab" data-bs-toggle="tab" data-bs-target="#nav-rules" type="button" role="tab" aria-controls="nav-rules" aria-selected="false">
+                __MSG_TEXT_DOMAIN_RULES__
             </button>
             <button class="nav-link" id="nav-settings-tab" data-bs-toggle="tab" data-bs-target="#nav-settings" type="button" role="tab" aria-controls="nav-settings" aria-selected="false">
                 __MSG_TEXT_SETTINGS__
@@ -88,6 +91,53 @@ login:password@ip:port # comment 2</textarea>
                         <button type="button" class="btn btn-warning w-100 saveProxy">__MSG_TEXT_BTN_SAVE__</button>
                     </div>
                 </div>
+
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="nav-rules" role="tabpanel" aria-labelledby="nav-rules-tab" tabindex="0">
+            <div class="card card-body border-0">
+
+                <p class="m-0 mb-2 text-body-secondary small" data-i18n="TEXT_DOMAIN_RULES_INFO"></p>
+
+                <div class="border rounded p-2 mb-3 domain_rule_form">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-4">
+                            <label for="rule_pattern" class="form-label mb-1 small" data-i18n="TEXT_DOMAIN_PATTERN"></label>
+                            <input type="text" class="form-control form-control-sm font-monospace" id="rule_pattern" placeholder="example.com">
+                        </div>
+                        <div class="col-sm-4">
+                            <label for="rule_proxy" class="form-label mb-1 small" data-i18n="TEXT_DOMAIN_PROXY"></label>
+                            <select class="form-select form-select-sm font-monospace" id="rule_proxy">
+                                <option value="" data-i18n="TEXT_DOMAIN_PROXY_SELECT"></option>
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <label for="rule_note" class="form-label mb-1 small" data-i18n="TEXT_DOMAIN_NOTE"></label>
+                            <input type="text" class="form-control form-control-sm" id="rule_note">
+                        </div>
+                        <div class="col-sm-1">
+                            <button type="button" class="btn btn-warning btn-sm w-100 addDomainRule" data-i18n="TEXT_BTN_ADD"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="table table-sm table-hover table-bordered m-0 domain_rules">
+                    <thead>
+                    <tr>
+                        <th style="width: 1px"></th>
+                        <th data-i18n="TEXT_DOMAIN_PATTERN"></th>
+                        <th data-i18n="TEXT_DOMAIN_PROXY"></th>
+                        <th data-i18n="TEXT_DOMAIN_NOTE"></th>
+                        <th style="width: 1px"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr>
+                        <td colspan="5" class="text-center domain_rules_empty" data-i18n="TEXT_DOMAIN_RULES_EMPTY"></td>
+                    </tr>
+                    </tbody>
+                </table>
 
             </div>
         </div>

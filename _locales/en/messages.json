@@ -1,12 +1,12 @@
 {
   "defTitle": {
-    "message": "Simple Proxy Switcher"
+    "message": "Proxy By Domain"
   },
   "extName": {
-    "message": "Simple Proxy Switcher"
+    "message": "Proxy By Domain"
   },
   "extDescr": {
-    "message": "Simple Proxy Switcher"
+    "message": "Proxy By Domain"
   },
   "TEXT_WITH": {
     "message": "With"
@@ -52,5 +52,41 @@
   },
   "TEXT_EXCLUDE_URLS": {
     "message": "Exclude URLs"
+  },
+  "TEXT_DOMAIN_RULES": {
+    "message": "Domain Rules"
+  },
+  "TEXT_DOMAIN_RULES_INFO": {
+    "message": "Automatically route specific domains through a selected proxy. Other traffic stays direct unless a global proxy is enabled."
+  },
+  "TEXT_DOMAIN_RULES_EMPTY": {
+    "message": "No domain rules yet"
+  },
+  "TEXT_DOMAIN_PATTERN": {
+    "message": "Domain / pattern"
+  },
+  "TEXT_DOMAIN_PROXY": {
+    "message": "Proxy"
+  },
+  "TEXT_DOMAIN_PROXY_SELECT": {
+    "message": "Select proxy"
+  },
+  "TEXT_DOMAIN_NOTE": {
+    "message": "Note"
+  },
+  "TEXT_DOMAIN_ENABLED": {
+    "message": "On"
+  },
+  "TEXT_BTN_ADD": {
+    "message": "Add"
+  },
+  "TEXT_BTN_DELETE": {
+    "message": "Delete"
+  },
+  "TEXT_DOMAIN_PATTERN_INVALID": {
+    "message": "Enter a valid domain or pattern, e.g. example.com or *.example.com"
+  },
+  "TEXT_DOMAIN_PROXY_REQUIRED": {
+    "message": "Select a proxy from the imported list"
   }
 }

@@ -9,6 +9,14 @@ body {
     border-radius: 0 !important;
 }
 
+.domain_rules input,
+.domain_rules select {
+    outline: none !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+}
+
 .copyright {
     font-size: .75rem;
 }

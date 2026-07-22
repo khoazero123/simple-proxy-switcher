@@ -1,6 +1,7 @@
 const defaults = {
     proxy_current: '',
     proxy_list: '',
+    domain_rules: '[]',
     reload_current_tab: false,
     reload_other_tabs: false,
     remove_cookies: false,
@@ -10,7 +11,7 @@ const defaults = {
 
 
 let proxyEnabled = false;
-let proxyAuth = null;
+let proxyAuthMap = {};
 let _restored = false;
 
 
@@ -22,6 +23,28 @@ const readJSON = str => {
         return '';
     }
 };
+
+
+function parseDomainRules(raw) {
+    const list = readJSON(raw);
+    return Array.isArray(list) ? list : [];
+}
+
+
+function proxyKey({ip, port}) {
+    return `${ip}:${port}`;
+}
+
+
+function buildAuthMap(entries) {
+    const map = {};
+    for (const {ip, port, user, pass} of entries) {
+        if (user && pass) {
+            map[proxyKey({ip, port})] = {user, pass};
+        }
+    }
+    return map;
+}
 
 
 async function runSideEffects() {
@@ -104,6 +127,59 @@ function updateIcon() {
 }
 
 
+function buildExcludePacPatterns(patterns) {
+    if (!patterns.length) return '';
+    const jsonPatterns = JSON.stringify(patterns);
+    return `  const excludePats = ${jsonPatterns};
+  for (let i = 0; i < excludePats.length; i++) {
+    if (shExpMatch(url, excludePats[i]) || shExpMatch(host, excludePats[i])) {
+      return 'DIRECT';
+    }
+  }
+`;
+}
+
+
+function buildGlobalPacData(proxyHost, proxyPort, patterns) {
+    const excludeBlock = buildExcludePacPatterns(patterns);
+    return `function FindProxyForURL(url, host) {
+${excludeBlock}  return 'PROXY ${proxyHost}:${proxyPort}';
+}`;
+}
+
+
+function buildDomainRulesPacData(rules, patterns) {
+    const excludeBlock = buildExcludePacPatterns(patterns);
+    const pacRules = rules.map(r => ({
+        pattern: r.pattern,
+        proxy: `PROXY ${r.proxy.ip}:${r.proxy.port}`,
+    }));
+
+    return `function FindProxyForURL(url, host) {
+${excludeBlock}  const rules = ${JSON.stringify(pacRules)};
+  for (let i = 0; i < rules.length; i++) {
+    const r = rules[i];
+    if (matchDomainPattern(host, r.pattern)) {
+      return r.proxy;
+    }
+  }
+  return 'DIRECT';
+}
+
+function matchDomainPattern(host, pattern) {
+  if (pattern.indexOf('*') >= 0 || pattern.indexOf('?') >= 0) {
+    return shExpMatch(host, pattern);
+  }
+  return host === pattern || dnsDomainIs(host, pattern);
+}`;
+}
+
+
+function getEnabledDomainRules(rules) {
+    return rules.filter(r => r.enabled && r.pattern && r.proxy?.ip && r.proxy?.port);
+}
+
+
 async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
     const {exclude_urls = ''} = await chrome.storage.local.get('exclude_urls');
     const patterns = exclude_urls.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -113,16 +189,7 @@ async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
 
     const needsPac = patterns.some(p => p.includes('/'));
     if (needsPac) {
-        const jsonPatterns = JSON.stringify(patterns);
-        const pacData = `function FindProxyForURL(url, host) {
-  const pats = ${jsonPatterns};
-  for (let i = 0; i < pats.length; i++) {
-    if (shExpMatch(url, pats[i]) || shExpMatch(host, pats[i])) {
-      return 'DIRECT';
-    }
-  }
-  return 'PROXY ${proxyHost}:${proxyPort}';
-}`;
+        const pacData = buildGlobalPacData(proxyHost, proxyPort, patterns);
         config = {mode: 'pac_script', pacScript: {data: pacData}};
     } else {
         config = {
@@ -137,7 +204,7 @@ async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
     await chrome.proxy.settings.set({value: config, scope: 'regular'});
 
     proxyEnabled = true;
-    proxyAuth = user && pass ? {user, pass} : null;
+    proxyAuthMap = buildAuthMap([{ip, port, user, pass}]);
     await chrome.storage.local.set({proxy_current: JSON.stringify({ip, port, user, pass})});
     updateIcon();
 
@@ -145,36 +212,59 @@ async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
 }
 
 
-function disableProxy() {
-    chrome.proxy.settings.clear({scope: 'regular'});
-    proxyEnabled = false;
-    proxyAuth = null;
-    chrome.storage.local.set({proxy_current: ''});
+async function applyDomainRules(withSideFx = false) {
+    const {domain_rules = '[]', exclude_urls = ''} = await chrome.storage.local.get(['domain_rules', 'exclude_urls']);
+    const rules = getEnabledDomainRules(parseDomainRules(domain_rules));
+
+    if (!rules.length) {
+        await chrome.proxy.settings.clear({scope: 'regular'});
+        proxyEnabled = false;
+        proxyAuthMap = {};
+        updateIcon();
+        return;
+    }
+
+    const patterns = exclude_urls.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const pacData = buildDomainRulesPacData(rules, patterns);
+
+    await chrome.proxy.settings.set({
+        value: {mode: 'pac_script', pacScript: {data: pacData}},
+        scope: 'regular',
+    });
+
+    proxyEnabled = true;
+    proxyAuthMap = buildAuthMap(rules.map(r => r.proxy));
     updateIcon();
-    runSideEffects();
+
+    if (withSideFx) runSideEffects();
 }
 
 
-/*chrome.storage.local.get('proxy_current').then(({proxy_current}) => {
-
+async function reapplyProxyConfig(withSideFx = false) {
+    const {proxy_current = ''} = await chrome.storage.local.get('proxy_current');
     const p = readJSON(proxy_current);
-    if (p && p.ip && p.port) applyProxy(p, false);
-});*/
+
+    if (p && p.ip && p.port) {
+        await applyProxy(p, withSideFx);
+        return;
+    }
+
+    await applyDomainRules(withSideFx);
+}
+
+
+async function disableProxy() {
+    await chrome.storage.local.set({proxy_current: ''});
+    await reapplyProxyConfig(true);
+}
+
 
 async function restoreProxy() {
     if (_restored) return;
     _restored = true;
-
-    const {proxy_current = ''} = await chrome.storage.local.get('proxy_current');
-    const p = readJSON(proxy_current);
-    if (p && p.ip && p.port) {
-        await applyProxy(p, false);
-    } else {
-        proxyEnabled = false;
-        proxyAuth = null;
-        updateIcon();
-    }
+    await reapplyProxyConfig(false);
 }
+
 
 chrome.runtime.onStartup.addListener(restoreProxy);
 chrome.runtime.onInstalled.addListener(restoreProxy);
@@ -182,17 +272,16 @@ restoreProxy();
 
 
 chrome.webRequest.onAuthRequired.addListener(details => {
+        if (!details.isProxy) return;
 
-        if (details.isProxy && proxyAuth) {
-            return {authCredentials: {username: proxyAuth.user, password: proxyAuth.pass}};
+        const challenger = details.challenger || {};
+        const key = proxyKey({ip: challenger.host, port: challenger.port});
+        const creds = proxyAuthMap[key];
+        if (creds) {
+            return {authCredentials: {username: creds.user, password: creds.pass}};
         }
     }, {urls: ['<all_urls>']}, ['blocking']
 );
-
-
-/*chrome.proxy.onProxyError.addListener(details => {
-    console.log('chrome.proxy.onProxyError', details);
-});*/
 
 
 chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
@@ -214,11 +303,7 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
             chrome.storage.local.set({[req.key]: req.val}).then(async () => {
                 sendResponse({status: 'ok'});
                 if (req.key === 'exclude_urls' && proxyEnabled) {
-                    const {proxy_current} = await chrome.storage.local.get('proxy_current');
-                    if (proxy_current) {
-                        const p = JSON.parse(proxy_current);
-                        applyProxy(p, false);
-                    }
+                    await reapplyProxyConfig(false);
                 }
             });
             return true;
@@ -237,6 +322,18 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
                 status: 'ok',
                 saved: list.length
             }));
+            return true;
+        }
+
+        case 'save_domain_rules': {
+            const rules = Array.isArray(req.data) ? req.data : [];
+            chrome.storage.local.set({domain_rules: JSON.stringify(rules)}).then(async () => {
+                sendResponse({status: 'ok', saved: rules.length});
+                const {proxy_current = ''} = await chrome.storage.local.get('proxy_current');
+                if (!proxy_current) {
+                    await applyDomainRules(false);
+                }
+            });
             return true;
         }
 
