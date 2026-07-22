@@ -148,12 +148,15 @@ ${excludeBlock}  return 'PROXY ${proxyHost}:${proxyPort}';
 }
 
 
-function buildDomainRulesPacData(rules, patterns) {
+function buildUnifiedPacData(globalProxy, rules, patterns) {
     const excludeBlock = buildExcludePacPatterns(patterns);
     const pacRules = rules.map(r => ({
         pattern: r.pattern,
         proxy: `PROXY ${r.proxy.ip}:${r.proxy.port}`,
     }));
+    const fallback = globalProxy
+        ? `return 'PROXY ${globalProxy.ip}:${globalProxy.port}';`
+        : "return 'DIRECT';";
 
     return `function FindProxyForURL(url, host) {
 ${excludeBlock}  const rules = ${JSON.stringify(pacRules)};
@@ -163,7 +166,7 @@ ${excludeBlock}  const rules = ${JSON.stringify(pacRules)};
       return r.proxy;
     }
   }
-  return 'DIRECT';
+  ${fallback}
 }
 
 function matchDomainPattern(host, pattern) {
@@ -175,27 +178,55 @@ function matchDomainPattern(host, pattern) {
 }
 
 
+function buildDomainRulesPacData(rules, patterns) {
+    return buildUnifiedPacData(null, rules, patterns);
+}
+
+
 function getEnabledDomainRules(rules) {
     return rules.filter(r => r.enabled && r.pattern && r.proxy?.ip && r.proxy?.port);
 }
 
 
-async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
-    const {exclude_urls = ''} = await chrome.storage.local.get('exclude_urls');
+async function applyProxyConfig(withSideFx = false) {
+    const {
+        proxy_current = '',
+        domain_rules = '[]',
+        exclude_urls = '',
+    } = await chrome.storage.local.get(['proxy_current', 'domain_rules', 'exclude_urls']);
+
+    const globalProxy = readJSON(proxy_current);
+    const hasGlobalProxy = !!(globalProxy && globalProxy.ip && globalProxy.port);
+    const rules = getEnabledDomainRules(parseDomainRules(domain_rules));
     const patterns = exclude_urls.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
-    let config;
-    const proxyHost = ip, proxyPort = Number(port);
+    if (!hasGlobalProxy && !rules.length) {
+        await chrome.proxy.settings.clear({scope: 'regular'});
+        proxyEnabled = false;
+        proxyAuthMap = {};
+        updateIcon();
+        return;
+    }
 
-    const needsPac = patterns.some(p => p.includes('/'));
+    const authEntries = [];
+    if (hasGlobalProxy) authEntries.push(globalProxy);
+    authEntries.push(...rules.map(r => r.proxy));
+
+    const needsPac = rules.length > 0 || patterns.some(p => p.includes('/'));
+    let config;
+
     if (needsPac) {
-        const pacData = buildGlobalPacData(proxyHost, proxyPort, patterns);
+        const pacData = buildUnifiedPacData(
+            hasGlobalProxy ? globalProxy : null,
+            rules,
+            patterns,
+        );
         config = {mode: 'pac_script', pacScript: {data: pacData}};
     } else {
         config = {
             mode: 'fixed_servers',
             rules: {
-                singleProxy: {host: proxyHost, port: proxyPort},
+                singleProxy: {host: globalProxy.ip, port: Number(globalProxy.port)},
                 bypassList: patterns,
             },
         };
@@ -204,52 +235,26 @@ async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
     await chrome.proxy.settings.set({value: config, scope: 'regular'});
 
     proxyEnabled = true;
-    proxyAuthMap = buildAuthMap([{ip, port, user, pass}]);
-    await chrome.storage.local.set({proxy_current: JSON.stringify({ip, port, user, pass})});
+    proxyAuthMap = buildAuthMap(authEntries);
     updateIcon();
 
     if (withSideFx) runSideEffects();
+}
+
+
+async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
+    await chrome.storage.local.set({proxy_current: JSON.stringify({ip, port, user, pass})});
+    await applyProxyConfig(withSideFx);
 }
 
 
 async function applyDomainRules(withSideFx = false) {
-    const {domain_rules = '[]', exclude_urls = ''} = await chrome.storage.local.get(['domain_rules', 'exclude_urls']);
-    const rules = getEnabledDomainRules(parseDomainRules(domain_rules));
-
-    if (!rules.length) {
-        await chrome.proxy.settings.clear({scope: 'regular'});
-        proxyEnabled = false;
-        proxyAuthMap = {};
-        updateIcon();
-        return;
-    }
-
-    const patterns = exclude_urls.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const pacData = buildDomainRulesPacData(rules, patterns);
-
-    await chrome.proxy.settings.set({
-        value: {mode: 'pac_script', pacScript: {data: pacData}},
-        scope: 'regular',
-    });
-
-    proxyEnabled = true;
-    proxyAuthMap = buildAuthMap(rules.map(r => r.proxy));
-    updateIcon();
-
-    if (withSideFx) runSideEffects();
+    await applyProxyConfig(withSideFx);
 }
 
 
 async function reapplyProxyConfig(withSideFx = false) {
-    const {proxy_current = ''} = await chrome.storage.local.get('proxy_current');
-    const p = readJSON(proxy_current);
-
-    if (p && p.ip && p.port) {
-        await applyProxy(p, withSideFx);
-        return;
-    }
-
-    await applyDomainRules(withSideFx);
+    await applyProxyConfig(withSideFx);
 }
 
 
@@ -329,10 +334,7 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
             const rules = Array.isArray(req.data) ? req.data : [];
             chrome.storage.local.set({domain_rules: JSON.stringify(rules)}).then(async () => {
                 sendResponse({status: 'ok', saved: rules.length});
-                const {proxy_current = ''} = await chrome.storage.local.get('proxy_current');
-                if (!proxy_current) {
-                    await applyDomainRules(false);
-                }
+                await applyProxyConfig(false);
             });
             return true;
         }

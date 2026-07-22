@@ -121,9 +121,10 @@ async function getActiveTabHost() {
 
 
 function getEffectiveProxy(globalProxy, host) {
-    if (globalProxy) return globalProxy;
     const matched = findMatchingRule(host, domainRules);
-    return matched?.proxy || null;
+    if (matched?.proxy) return matched.proxy;
+    if (globalProxy) return globalProxy;
+    return null;
 }
 
 
