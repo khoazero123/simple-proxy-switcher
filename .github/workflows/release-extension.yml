@@ -1,0 +1,88 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package Chrome Web Store ZIP
+    runs-on: ubuntu-latest
+    env:
+      HAS_CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY_BASE64 != '' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read extension metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./manifest.json').version")
+          NAME=$(node -p "require('./_locales/en/messages.json').extName.message")
+          SAFE_NAME=$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-' | sed 's/^-//; s/-$//')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$SAFE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare package directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist package
+          mkdir -p dist package
+          rsync -av \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='dist/' \
+            --exclude='package/' \
+            --exclude='*.zip' \
+            --exclude='*.crx' \
+            --exclude='*.pem' \
+            ./ package/
+
+      - name: Create ZIP archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd package
+          zip -r "../dist/${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}.zip" .
+
+      - name: Setup Chrome for optional CRX
+        if: env.HAS_CRX_PRIVATE_KEY == 'true'
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Create optional CRX package
+        if: env.HAS_CRX_PRIVATE_KEY == 'true'
+        shell: bash
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          CRX_PRIVATE_KEY_BASE64: ${{ secrets.CRX_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          echo "$CRX_PRIVATE_KEY_BASE64" | base64 --decode > extension.pem
+          "$CHROME_PATH" --pack-extension="$PWD/package" --pack-extension-key="$PWD/extension.pem"
+          mv package.crx "dist/${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}.crx"
+          rm -f extension.pem package.pem
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.name }}-${{ steps.meta.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
