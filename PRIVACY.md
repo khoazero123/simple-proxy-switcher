@@ -5,8 +5,6 @@ Last updated: July 22, 2026
 
 This Privacy Policy explains how the **Proxy By Domain** browser extension ("Extension", "we", "our") handles information when you install and use it.
 
-The Extension is developed by MM07 and distributed via the Chrome Web Store and the project repository at [github.com/maksam07/simple-proxy-switcher](https://github.com/maksam07/simple-proxy-switcher).
-
 ---
 
 ## Summary
