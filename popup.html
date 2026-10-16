@@ -36,10 +36,15 @@
                     __MSG_TEXT_BTN_DISABLE_PROXY__
                 </button>
 
+                <div class="alert alert-warning py-2 px-2 small d-none" id="socks_auth_warning">
+                    __MSG_TEXT_SOCKS_AUTH_WARNING__
+                </div>
+
                 <table class="table table-sm table-hover table-bordered m-0 proxy_list">
                     <thead>
                     <tr>
                         <th style="width: 1px"></th>
+                        <th style="min-width: 70px">TYPE</th>
                         <th style="min-width: 110px">IP</th>
                         <th style="min-width: 60px">PORT</th>
                         <th>LOGIN</th>
@@ -71,15 +76,28 @@
                                 </h2>
                                 <div id="collapseImportHelp" class="accordion-collapse collapse" data-bs-parent="#importHelp">
                                     <div class="accordion-body p-2">
-                                <textarea class="form-control shadow-none" rows="5" style="resize: none;" readonly>ip:port
+                                <textarea class="form-control shadow-none" rows="8" style="resize: none;" readonly>ip:port
 ip:port:login:password
 login:password@ip:port
+socks5://ip:port
+socks5://ip:port:login:password
+socks5://login:password@ip:port
+socks4://ip:port
 # comment 1
 login:password@ip:port # comment 2</textarea>
                                     </div>
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div>
+                        <label for="default_scheme" class="form-label">__MSG_TEXT_DEFAULT_SCHEME__</label>
+                        <select class="form-select form-select-sm font-monospace" id="default_scheme" name="default_scheme" style="max-width: 180px">
+                            <option value="http">http</option>
+                            <option value="socks5">socks5</option>
+                            <option value="socks4">socks4</option>
+                        </select>
                     </div>
 
                     <div>

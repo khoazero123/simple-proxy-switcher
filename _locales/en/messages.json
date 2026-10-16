@@ -24,7 +24,13 @@
     "message": "Import"
   },
   "TEXT_EXAMPLE": {
-    "message": "Example (only http/s)"
+    "message": "Example (http/s, socks4/socks5)"
+  },
+  "TEXT_DEFAULT_SCHEME": {
+    "message": "Default type for lines without a scheme (applies on import)"
+  },
+  "TEXT_SOCKS_AUTH_WARNING": {
+    "message": "SOCKS proxies: Chrome ignores username/password for SOCKS4/SOCKS5 (highlighted in TYPE). For authenticated SOCKS5 run a local relay (port-forward) and import 127.0.0.1:port instead."
   },
   "TEXT_OR": {
     "message": "or"

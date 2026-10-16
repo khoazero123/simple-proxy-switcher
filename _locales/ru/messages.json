@@ -24,7 +24,13 @@
     "message": "Импорт"
   },
   "TEXT_EXAMPLE": {
-    "message": "Пример (только http/s)"
+    "message": "Пример (http/s, socks4/socks5)"
+  },
+  "TEXT_DEFAULT_SCHEME": {
+    "message": "Тип по умолчанию для строк без схемы (применяется при импорте)"
+  },
+  "TEXT_SOCKS_AUTH_WARNING": {
+    "message": "SOCKS-прокси: Chrome игнорирует логин/пароль для SOCKS4/SOCKS5 (подсвечено в TYPE). Для SOCKS5 с авторизацией запустите локальный релей (проброс порта) и импортируйте 127.0.0.1:порт."
   },
   "TEXT_OR": {
     "message": "или"

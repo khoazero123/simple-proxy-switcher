@@ -39,14 +39,26 @@ function escapeHtml(str) {
 }
 
 
+function proxyScheme(p) {
+    return (p && p.scheme) || 'http';
+}
+
+
 function proxyLabel(p) {
     const auth = p.user && p.pass ? `${p.user}:${p.pass}@` : '';
-    return `${auth}${p.ip}:${p.port}`;
+    const prefix = proxyScheme(p) === 'http' ? '' : `${proxyScheme(p)}://`;
+    return `${prefix}${auth}${p.ip}:${p.port}`;
 }
 
 
 function proxyValue(p) {
-    return JSON.stringify({ip: p.ip, port: p.port, user: p.user || '', pass: p.pass || ''});
+    return JSON.stringify({
+        ip: p.ip,
+        port: p.port,
+        user: p.user || '',
+        pass: p.pass || '',
+        scheme: proxyScheme(p),
+    });
 }
 
 
@@ -75,7 +87,8 @@ function proxiesEqual(a, b) {
         && a.ip === b.ip
         && String(a.port) === String(b.port)
         && (a.user || '') === (b.user || '')
-        && (a.pass || '') === (b.pass || '');
+        && (a.pass || '') === (b.pass || '')
+        && proxyScheme(a) === proxyScheme(b);
 }
 
 
@@ -252,11 +265,14 @@ async function createTableProxy() {
     $('[name="import_proxy"]').val(
         proxyList.flatMap(p => [
             ...(p.commentBefore ? [`# ${p.commentBefore}`] : []),
-            `${p.user && p.pass ? `${p.user}:${p.pass}@` : ''}${p.ip}:${p.port}` + (p.commentAfter ? ` # ${p.commentAfter}` : '')
+            `${proxyScheme(p) === 'http' ? '' : `${proxyScheme(p)}://`}${p.user && p.pass ? `${p.user}:${p.pass}@` : ''}${p.ip}:${p.port}` + (p.commentAfter ? ` # ${p.commentAfter}` : '')
         ]).join('\n')
     );
 
     $('button.resetProxy')[current ? 'removeClass' : 'addClass']('d-none');
+
+    const socksAuthEntries = proxyList.filter(p => proxyScheme(p).startsWith('socks') && p.user && p.pass);
+    $('#socks_auth_warning')[socksAuthEntries.length ? 'removeClass' : 'addClass']('d-none');
 
     if (!proxyList.length) {
         setTimeout(() => $('#nav-import-tab').tab('show'), 250);
@@ -276,14 +292,23 @@ async function createTableProxy() {
                 : `<a href="#" class="text-decoration-none proxy_select">${emoji}</a>`;
 
         if (p.commentBefore) {
-            tbody.append(`<tr><td></td><td colspan="5" class="p-0 px-1">${p.commentBefore}</td></tr>`);
+            tbody.append(`<tr><td></td><td colspan="6" class="p-0 px-1">${p.commentBefore}</td></tr>`);
         }
+
+        const scheme = proxyScheme(p);
+        const schemeCellClass = scheme.startsWith('socks') && p.user && p.pass
+            ? ' i_scheme text-warning fw-bold'
+            : ' i_scheme';
+        const schemeTitle = scheme.startsWith('socks') && p.user && p.pass
+            ? ` title="${escapeHtml(chrome.i18n.getMessage('TEXT_SOCKS_AUTH_WARNING') || '')}" data-bs-toggle="tooltip"`
+            : '';
 
         tbody.append(`
         <tr>
             <td class="py-0 px-1 align-middle${isEffective ? '' : ' text-secondary'}">
                 ${statusCell}
             </td>
+            <td class="p-0"><input class="font-monospace form-control form-control-sm${schemeCellClass}" value="${escapeHtml(scheme)}"${schemeTitle} readonly></td>
             <td class="p-0"><input class="font-monospace form-control form-control-sm i_ip"   value="${p.ip}" readonly></td>
             <td class="p-0"><input class="font-monospace form-control form-control-sm i_port" value="${p.port}" readonly></td>
             <td class="p-0"><input class="font-monospace form-control form-control-sm i_user" value="${p.user}" readonly></td>
@@ -322,15 +347,17 @@ $(async function () {
 
             const $tr = $(this).closest('tr');
 
-            await chrome.runtime.sendMessage({
+            const result = await chrome.runtime.sendMessage({
                 action: 'set_proxy',
                 data: {
                     ip: $tr.find('.i_ip').val().trim(),
                     port: $tr.find('.i_port').val().trim(),
                     user: $tr.find('.i_user').val().trim(),
                     pass: $tr.find('.i_pass').val().trim(),
+                    scheme: $tr.find('.i_scheme').val().trim(),
                 },
             });
+            if (result?.status === 'error') showRuleError(result.message);
 
             await createTableProxy();
         })
@@ -444,6 +471,10 @@ $(async function () {
 
     $('#exclude_urls').val(stored.exclude_urls || '').on('change', function () {
         chrome.runtime.sendMessage({action: 'set_option', key: 'exclude_urls', val: this.value.trim(),});
+    });
+
+    $('#default_scheme').val(stored.default_scheme || 'http').on('change', function () {
+        chrome.runtime.sendMessage({action: 'set_option', key: 'default_scheme', val: this.value});
     });
 
 

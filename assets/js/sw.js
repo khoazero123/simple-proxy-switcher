@@ -7,7 +7,38 @@ const defaults = {
     remove_cookies: false,
     remove_cache: false,
     exclude_urls: '',
+    default_scheme: 'http',
 };
+
+const SCHEME_ALIASES = {
+    http: 'http',
+    https: 'https',
+    socks: 'socks5',
+    socks4: 'socks4',
+    socks4a: 'socks4',
+    socks5: 'socks5',
+    socks5h: 'socks5',
+};
+const DEFAULT_SCHEME = 'http';
+const SCHEME_PREFIX_RE = /^(socks4a|socks4|socks5h|socks5|socks|https|http):\/\//i;
+const PAC_KEYWORDS = {http: 'PROXY', https: 'HTTPS', socks4: 'SOCKS4', socks5: 'SOCKS5'};
+const AUTH_SCHEMES = ['http', 'https'];
+
+function normalizeScheme(raw) {
+    return SCHEME_ALIASES[String(raw || '').trim().toLowerCase()] || DEFAULT_SCHEME;
+}
+
+function proxyScheme(entry) {
+    return normalizeScheme(entry?.scheme);
+}
+
+function isSocks(entry) {
+    return proxyScheme(entry).startsWith('socks');
+}
+
+function pacEntry(entry) {
+    return `${PAC_KEYWORDS[proxyScheme(entry)]} ${entry.ip}:${entry.port}`;
+}
 
 
 let proxyEnabled = false;
@@ -38,8 +69,10 @@ function proxyKey({ip, port}) {
 
 function buildAuthMap(entries) {
     const map = {};
-    for (const {ip, port, user, pass} of entries) {
-        if (user && pass) {
+    for (const entry of entries) {
+        const {ip, port, user, pass} = entry;
+        // Chrome can only auto-inject credentials for HTTP(S) proxies.
+        if (user && pass && AUTH_SCHEMES.includes(proxyScheme(entry))) {
             map[proxyKey({ip, port})] = {user, pass};
         }
     }
@@ -75,7 +108,8 @@ async function runSideEffects() {
 }
 
 
-function parseProxyList(raw) {
+function parseProxyList(raw, fallbackScheme = DEFAULT_SCHEME) {
+    const baseScheme = normalizeScheme(fallbackScheme);
     const escape = {'&': '&amp;', '"': '&quot;', "'": '&#39;', '<': '&lt;', '>': '&gt;'};
     let pendingComment = '';
 
@@ -91,8 +125,15 @@ function parseProxyList(raw) {
         }
 
         const idx = line.indexOf('#');
-        const text = idx === -1 ? line : line.slice(0, idx).trim();
+        let text = idx === -1 ? line : line.slice(0, idx).trim();
         const inlineComment = idx === -1 ? '' : line.slice(idx + 1).trim().replace(/[&"'<>]/g, c => (escape)[c]);
+
+        let scheme = baseScheme;
+        const schemeMatch = text.match(SCHEME_PREFIX_RE);
+        if (schemeMatch) {
+            scheme = normalizeScheme(schemeMatch[1]);
+            text = text.slice(schemeMatch[0].length).trim();
+        }
 
         let ip, port, user = '', pass = '';
         if (text.includes('@')) {
@@ -103,12 +144,22 @@ function parseProxyList(raw) {
             [ip, port, user = '', pass = ''] = text.split(':');
         }
 
-        if (!ip || !port || ((!!user) ^ (!!pass))) {
+        const portNumber = Number(port);
+        const validPort = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
+        if (!ip || !validPort || ((!!user) ^ (!!pass))) {
             pendingComment = '';
             return out;
         }
 
-        out.push({ip, port, user, pass, commentBefore: pendingComment, commentAfter: inlineComment});
+        out.push({
+            ip,
+            port: String(portNumber),
+            user,
+            pass,
+            scheme,
+            commentBefore: pendingComment,
+            commentAfter: inlineComment,
+        });
 
         pendingComment = '';
         return out;
@@ -140,10 +191,10 @@ function buildExcludePacPatterns(patterns) {
 }
 
 
-function buildGlobalPacData(proxyHost, proxyPort, patterns) {
+function buildGlobalPacData(proxy, patterns) {
     const excludeBlock = buildExcludePacPatterns(patterns);
     return `function FindProxyForURL(url, host) {
-${excludeBlock}  return 'PROXY ${proxyHost}:${proxyPort}';
+${excludeBlock}  return '${pacEntry(proxy)}';
 }`;
 }
 
@@ -152,10 +203,10 @@ function buildUnifiedPacData(globalProxy, rules, patterns) {
     const excludeBlock = buildExcludePacPatterns(patterns);
     const pacRules = rules.map(r => ({
         pattern: r.pattern,
-        proxy: `PROXY ${r.proxy.ip}:${r.proxy.port}`,
+        proxy: pacEntry(r.proxy),
     }));
     const fallback = globalProxy
-        ? `return 'PROXY ${globalProxy.ip}:${globalProxy.port}';`
+        ? `return '${pacEntry(globalProxy)}';`
         : "return 'DIRECT';";
 
     return `function FindProxyForURL(url, host) {
@@ -205,7 +256,7 @@ async function applyProxyConfig(withSideFx = false) {
         proxyEnabled = false;
         proxyAuthMap = {};
         updateIcon();
-        return;
+        return false;
     }
 
     const authEntries = [];
@@ -226,25 +277,42 @@ async function applyProxyConfig(withSideFx = false) {
         config = {
             mode: 'fixed_servers',
             rules: {
-                singleProxy: {host: globalProxy.ip, port: Number(globalProxy.port)},
+                singleProxy: {
+                    scheme: proxyScheme(globalProxy),
+                    host: globalProxy.ip,
+                    port: Number(globalProxy.port),
+                },
                 bypassList: patterns,
             },
         };
     }
 
-    await chrome.proxy.settings.set({value: config, scope: 'regular'});
+    try {
+        await chrome.proxy.settings.set({value: config, scope: 'regular'});
+    } catch (err) {
+        console.error('[simple-proxy-switcher] Chrome rejected the proxy configuration', err, config);
+        proxyEnabled = false;
+        chrome.action.setBadgeText({text: 'ERR'});
+        chrome.action.setBadgeBackgroundColor({color: '#dc3545'});
+        return false;
+    }
 
     proxyEnabled = true;
     proxyAuthMap = buildAuthMap(authEntries);
     updateIcon();
 
     if (withSideFx) runSideEffects();
+    return true;
 }
 
 
-async function applyProxy({ip, port, user = '', pass = ''}, withSideFx = true) {
-    await chrome.storage.local.set({proxy_current: JSON.stringify({ip, port, user, pass})});
-    await applyProxyConfig(withSideFx);
+async function applyProxy({ip, port, user = '', pass = '', scheme = DEFAULT_SCHEME}, withSideFx = true) {
+    const {proxy_current: previous = ''} = await chrome.storage.local.get({proxy_current: ''});
+    const entry = {ip, port, user, pass, scheme: normalizeScheme(scheme)};
+    await chrome.storage.local.set({proxy_current: JSON.stringify(entry)});
+    const applied = await applyProxyConfig(withSideFx);
+    if (applied === false) await chrome.storage.local.set({proxy_current: previous});
+    return applied;
 }
 
 
@@ -271,9 +339,9 @@ async function restoreProxy() {
 }
 
 
-chrome.runtime.onStartup.addListener(restoreProxy);
-chrome.runtime.onInstalled.addListener(restoreProxy);
-restoreProxy();
+chrome.runtime.onStartup.addListener(() => restoreProxy().catch(err => console.error(err)));
+chrome.runtime.onInstalled.addListener(() => restoreProxy().catch(err => console.error(err)));
+restoreProxy().catch(err => console.error(err));
 
 
 chrome.webRequest.onAuthRequired.addListener(details => {
@@ -322,11 +390,14 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
                 return true;
             }
 
-            const list = parseProxyList(raw);
-            chrome.storage.local.set({proxy_list: JSON.stringify(list)}).then(() => sendResponse({
-                status: 'ok',
-                saved: list.length
-            }));
+            chrome.storage.local.get({default_scheme: DEFAULT_SCHEME}).then(({default_scheme}) => {
+                const list = parseProxyList(raw, default_scheme);
+                chrome.storage.local.set({proxy_list: JSON.stringify(list)}).then(() => sendResponse({
+                    status: 'ok',
+                    saved: list.length,
+                    socks: list.filter(isSocks).length,
+                }));
+            });
             return true;
         }
 
@@ -340,7 +411,9 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
         }
 
         case 'set_proxy': {
-            applyProxy(req.data).then(() => sendResponse({status: 'ok'}));
+            applyProxy(req.data).then(applied => sendResponse(applied === false
+                ? {status: 'error', message: 'Chrome rejected the proxy configuration'}
+                : {status: 'ok'}));
             return true;
         }
 
